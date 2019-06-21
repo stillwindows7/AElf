@@ -201,48 +201,54 @@ namespace AElf.Contracts.CrossChain
 
         public override CrossChainBlockData GetIndexedCrossChainBlockDataByHeight(SInt64Value input)
         {
-            var indexedCrossChainBlockData = State.IndexedCrossChainBlockData[input.Value];
-            Assert(indexedCrossChainBlockData != null);
-            return indexedCrossChainBlockData;
+            var crossChainBlockData = new CrossChainBlockData();
+            var indexedSideChainBlockData = State.IndexedSideChainBlockData[input.Value];
+            if (indexedSideChainBlockData != null)
+                crossChainBlockData.SideChainBlockData.AddRange(indexedSideChainBlockData.SideChainBlockData);
+            
+            if (State.ParentChainId.Value != 0)
+            {
+                var indexedParentChainBlockData = State.LastIndexedParentChainBlockData.Value;
+                if (indexedParentChainBlockData != null && indexedParentChainBlockData.BlockHeight == input.Value)
+                    crossChainBlockData.ParentChainBlockData.AddRange(indexedParentChainBlockData.ParentChainBlockData);
+            }
+            
+            return crossChainBlockData;
         }
 
-        public override Empty RecordCrossChainData(CrossChainBlockData input)
+        public override Empty RecordCrossChainData(CrossChainBlockData crossChainBlockData)
         {
-            var crossChainBlockData = input;
             //Assert(IsMiner(), "Not authorized to do this.");
-            var indexedCrossChainData = State.IndexedCrossChainBlockData[Context.CurrentHeight];
+            var indexedCrossChainData = State.IndexedSideChainBlockData[Context.CurrentHeight];
             Assert(indexedCrossChainData == null); // This should not fail.
             
-            var sideChainBlockData = crossChainBlockData.SideChainBlockData;
-            IndexParentChainBlockInfo(crossChainBlockData.ParentChainBlockData.ToArray());
-            var indexedSideChainBlockData = IndexSideChainBlockInfo(sideChainBlockData.ToArray());
-
-            var actualCrossChainData = new CrossChainBlockData();
-            actualCrossChainData.ParentChainBlockData.AddRange(crossChainBlockData.ParentChainBlockData);
-            actualCrossChainData.SideChainBlockData.AddRange(indexedSideChainBlockData);
-            State.IndexedCrossChainBlockData[Context.CurrentHeight] = actualCrossChainData;
-//            Context.FireEvent(new CrossChainIndexingEvent
-//            {
-//                SideChainTransactionsMerkleTreeRoot = calculatedRoot,
-//                CrossChainBlockData = crossChainBlockData,
-//                Sender = Context.Sender // for validation 
-//            });
+            var indexedParentChainBlockData = IndexParentChainBlockInfo(crossChainBlockData.ParentChainBlockData);
+            if (indexedParentChainBlockData.ParentChainBlockData.Count > 0)
+                State.LastIndexedParentChainBlockData.Value = indexedParentChainBlockData;
+            
+            var indexedSideChainBlockData = IndexSideChainBlockInfo(crossChainBlockData.SideChainBlockData);
+            if (indexedSideChainBlockData.SideChainBlockData.Count > 0)
+                State.IndexedSideChainBlockData[Context.CurrentHeight] = indexedSideChainBlockData;
+            
             return new Empty();
         }
 
         /// <summary>
-        /// Index parent chain blocks.
+        /// Index parent chain block data.
         /// </summary>
         /// <param name="parentChainBlockData"></param>
-        private void IndexParentChainBlockInfo(ParentChainBlockData[] parentChainBlockData)
+        private IndexedParentChainBlockData IndexParentChainBlockInfo(IList<ParentChainBlockData> parentChainBlockData)
         {
             // only miner can do this.
             //Api.IsMiner("Not authorized to do this.");
 //            Assert(parentChainBlockData.Length <= 256, "Beyond maximal capacity for once indexing.");
             var parentChainId = State.ParentChainId.Value;
             var currentHeight = State.CurrentParentChainHeight.Value;
-            
-            for (var i = 0; i < parentChainBlockData.Length; i++)
+            var indexedParentChainBlockData = new IndexedParentChainBlockData
+            {
+                BlockHeight = Context.CurrentHeight
+            };
+            for (var i = 0; i < parentChainBlockData.Count; i++)
             {
                 var blockInfo = parentChainBlockData[i];
                 Assert(parentChainId == blockInfo.ChainId, "Wrong parent chain id.");
@@ -260,7 +266,7 @@ namespace AElf.Contracts.CrossChain
                 }
 
                 // send consensus data shared from main chain  
-                if (i == parentChainBlockData.Length - 1 && blockInfo.ExtraData.TryGetValue("Consensus", out var bytes))
+                if (i == parentChainBlockData.Count - 1 && blockInfo.ExtraData.TryGetValue("Consensus", out var bytes))
                 {
                     Context.LogDebug(() => "Updating consensus information..");
                     UpdateCurrentMiners(bytes);
@@ -271,23 +277,25 @@ namespace AElf.Contracts.CrossChain
                         blockInfo.CrossChainExtraData.SideChainTransactionsRoot;
 
                 currentHeight = targetHeight;
+                indexedParentChainBlockData.ParentChainBlockData.Add(blockInfo);
             }
 
             State.CurrentParentChainHeight.Value = currentHeight;
+            return indexedParentChainBlockData;
         }
 
         /// <summary>
-        /// Index side chain block(s).
+        /// Index side chain block data.
         /// </summary>
-        /// <param name="sideChainBlockData"></param>
-        /// <returns>Root of merkle tree created from side chain txn roots.</returns>
-        private List<SideChainBlockData> IndexSideChainBlockInfo(SideChainBlockData[] sideChainBlockData)
+        /// <param name="sideChainBlockData">Side chain block data to be indexed.</param>
+        /// <returns>Valid side chain block data which are indexed.</returns>
+        private IndexedSideChainBlockData IndexSideChainBlockInfo(IList<SideChainBlockData> sideChainBlockData)
         {
             // only miner can do this.
 //            Api.IsMiner("Not authorized to do this.");
 
-            var indexedSideChainBlockData = new List<SideChainBlockData>();
-            for (var i = 0; i < sideChainBlockData.Length; i++)
+            var indexedSideChainBlockData = new IndexedSideChainBlockData();
+            for (var i = 0; i < sideChainBlockData.Count; i++)
             {
                 var blockInfo = sideChainBlockData[i];
                 var chainId = blockInfo.ChainId;
@@ -312,7 +320,7 @@ namespace AElf.Contracts.CrossChain
                 
                 if (lockedToken < indexingPrice)
                 {
-                    info.SideChainStatus = SideChainStatus.InsufficientBalance;
+                    info.SideChainStatus = SideChainStatus.Terminated;
                 }
                 
                 State.SideChainInfos[chainId] = info;
@@ -326,7 +334,7 @@ namespace AElf.Contracts.CrossChain
                 });
 
                 State.CurrentSideChainHeight[chainId] = sideChainHeight;
-                indexedSideChainBlockData.Add(blockInfo);
+                indexedSideChainBlockData.SideChainBlockData.Add(blockInfo);
             }
             
             return indexedSideChainBlockData;

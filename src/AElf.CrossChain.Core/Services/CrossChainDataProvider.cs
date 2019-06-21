@@ -218,8 +218,7 @@ namespace AElf.CrossChain
             var crossChainBlockData = await _readerFactory.Create(currentBlockHash,
                     currentBlockHeight).GetIndexedCrossChainBlockDataByHeight
                 .CallAsync(new SInt64Value() {Value = currentBlockHeight});
-            if (crossChainBlockData == null) return null;
-            return CrossChainBlockData.Parser.ParseFrom(crossChainBlockData.ToByteString());
+            return crossChainBlockData;
         }
         
         /// <summary>
