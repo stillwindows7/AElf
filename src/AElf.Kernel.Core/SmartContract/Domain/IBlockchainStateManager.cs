@@ -170,16 +170,18 @@ namespace AElf.Kernel.SmartContract.Domain
                     //OriginBlockHash = origin.BlockHash
                 }).ToDictionary(p => p.Key, p => p);
 
-                Logger.LogTrace($"Start pipeline set for block height {blockState.BlockHeight}");
+                Logger.LogTrace($"---- Start pipeline set for block height {blockState.BlockHeight}");
                 await _versionedStates.PipelineSetAsync(dic);
+                Logger.LogTrace($"---- Finish pipeline set for block height {blockState.BlockHeight}");
 
                 chainStateInfo.Status = ChainStateMergingStatus.Merged;
                 chainStateInfo.BlockHash = blockState.BlockHash;
                 chainStateInfo.BlockHeight = blockState.BlockHeight;
                 await _chainStateInfoCollection.SetAsync(chainStateInfo.ChainId.ToStorageKey(), chainStateInfo);
 
+                Logger.LogTrace($"---- Start remove block state set for block height {blockState.BlockHeight}");
                 await _blockStateSets.RemoveAsync(blockStateHash.ToStorageKey());
-                Logger.LogTrace($"Finish remove block state set for block height {blockState.BlockHeight}");
+                Logger.LogTrace($"---- Finish remove block state set for block height {blockState.BlockHeight}");
                 chainStateInfo.Status = ChainStateMergingStatus.Common;
                 chainStateInfo.MergingBlockHash = null;
 
