@@ -202,9 +202,17 @@ namespace AElf.Contracts.CrossChain
         public override CrossChainBlockData GetIndexedCrossChainBlockDataByHeight(SInt64Value input)
         {
             var crossChainBlockData = new CrossChainBlockData();
+            Context.LogDebug(() => $"Try get side chain block data of height {input.Value}");
             var indexedSideChainBlockData = State.IndexedSideChainBlockData[input.Value];
             if (indexedSideChainBlockData != null)
+            {
+                Context.LogDebug(() => $"Got side chain block data of height {input.Value}");
                 crossChainBlockData.SideChainBlockData.AddRange(indexedSideChainBlockData.SideChainBlockData);
+            }
+            else
+            {
+                Context.LogDebug(() => $"Got side chain block data of height {input.Value}, it is null.");
+            }
             
             if (State.ParentChainId.Value != 0)
             {

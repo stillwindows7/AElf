@@ -5,6 +5,7 @@ using AElf.Kernel.Infrastructure;
 using AElf.Kernel.SmartContract.Infrastructure;
 using AElf.Types;
 using Google.Protobuf;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Volo.Abp.DependencyInjection;
 
@@ -26,6 +27,7 @@ namespace AElf.Kernel.SmartContract.Domain
         private readonly INotModifiedCachedStateStore<BlockStateSet> _blockStateSets;
         private readonly IStateStore<ChainStateInfo> _chainStateInfoCollection;
 
+        public ILogger<BlockchainStateManager> Logger { get; set; }
         private readonly int _chainId;
 
         public BlockchainStateManager(IStateStore<VersionedState> versionedStates,
@@ -168,6 +170,7 @@ namespace AElf.Kernel.SmartContract.Domain
                     //OriginBlockHash = origin.BlockHash
                 }).ToDictionary(p => p.Key, p => p);
 
+                Logger.LogTrace($"Start pipeline set for block height {blockState.BlockHeight}");
                 await _versionedStates.PipelineSetAsync(dic);
 
                 chainStateInfo.Status = ChainStateMergingStatus.Merged;
@@ -176,7 +179,7 @@ namespace AElf.Kernel.SmartContract.Domain
                 await _chainStateInfoCollection.SetAsync(chainStateInfo.ChainId.ToStorageKey(), chainStateInfo);
 
                 await _blockStateSets.RemoveAsync(blockStateHash.ToStorageKey());
-
+                Logger.LogTrace($"Finish remove block state set for block height {blockState.BlockHeight}");
                 chainStateInfo.Status = ChainStateMergingStatus.Common;
                 chainStateInfo.MergingBlockHash = null;
 
