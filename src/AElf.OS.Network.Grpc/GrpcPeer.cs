@@ -23,7 +23,7 @@ namespace AElf.OS.Network.Grpc
         private const int AnnouncementTimeout = 300;
         private const int BlockRequestTimeout = 300;
         private const int TransactionBroadcastTimeout = 300;
-        private const int BlocksRequestTimeout = 500;
+        private const int BlocksRequestTimeout = 3000;
         
         private enum MetricNames
         {
