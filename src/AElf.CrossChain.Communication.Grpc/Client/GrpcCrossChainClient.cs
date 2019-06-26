@@ -35,6 +35,7 @@ namespace AElf.CrossChain.Communication.Grpc
         private readonly string _host;
         
         public string TargetUriString => Channel.Target;
+        public bool IsConnected { get; private set; }
         public int RemoteChainId { get; }
 
 
@@ -50,7 +51,7 @@ namespace AElf.CrossChain.Communication.Grpc
         }
         
         /// <summary>
-        /// Create a new channel
+        /// Create a new channel.
         /// </summary>
         /// <param name="uriStr"></param>
         /// <param name="crt">Certificate</param>
@@ -62,30 +63,40 @@ namespace AElf.CrossChain.Communication.Grpc
             return channel;
         }
 
+        /// <summary>
+        /// Create a new channel.
+        /// </summary>
+        /// <param name="uriStr"></param>
+        /// <returns></returns>
         private static Channel CreateChannel(string uriStr)
         {
             return new Channel(uriStr, ChannelCredentials.Insecure);
-        }      
-
-        public Task<bool> ConnectAsync()
-        {
-            var reply = _basicGrpcClient.CrossChainHandShakeAsync(new HandShake
-            {
-                FromChainId = _localChainId,
-                ListeningPort = _localListeningPort,
-                Host = _host
-            }, new CallOptions().WithDeadline(DateTime.UtcNow.AddSeconds(DialTimeout)));
-            var res = reply != null && reply.Result;
-            
-            return Task.FromResult(res);
         }
 
+        /// <summary>
+        /// Connect with target chain.
+        /// </summary>
+        /// <returns></returns>
+        public Task ConnectAsync()
+        {
+            return RequestAsync(HandshakeAsync);
+        }
+        
+        /// <summary>
+        /// Close client and clear channel.
+        /// </summary>
+        /// <returns></returns>
         public async Task CloseAsync()
         {
             await Channel.ShutdownAsync();
         }
         
-        public async Task RequestCrossChainDataAsync(long targetHeight)
+        /// <summary>
+        /// Request target chain for cross chain data from target height. 
+        /// </summary>
+        /// <param name="targetHeight"></param>
+        /// <returns></returns>
+        public Task RequestCrossChainDataAsync(long targetHeight)
         {
             var requestData = new CrossChainRequest
             {
@@ -93,7 +104,39 @@ namespace AElf.CrossChain.Communication.Grpc
                 NextHeight = targetHeight
             };
 
-            using (var serverStream = RequestIndexing(requestData))
+            return RequestAsync(() => RequestCrossChainDataAsync(requestData));
+        }
+        
+        /// <summary>
+        /// Asynchronous request method.
+        /// </summary>
+        /// <param name="requestFunc"></param>
+        /// <returns></returns>
+        private async Task RequestAsync(Func<Task> requestFunc)
+        {
+            try
+            {
+                await requestFunc();
+            }
+            catch (RpcException)
+            {
+                IsConnected = false;
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Create options for grpc request.
+        /// </summary>
+        /// <returns></returns>
+        protected CallOptions CreateOption()
+        {
+            return new CallOptions().WithDeadline(TimestampHelper.GetUtcNow().ToDateTime().AddMilliseconds(DialTimeout));
+        }
+
+        private async Task RequestCrossChainDataAsync(CrossChainRequest crossChainRequest)
+        {
+            using (var serverStream = RequestIndexing(crossChainRequest))
             {
                 while (await serverStream.ResponseStream.MoveNext())
                 {
@@ -104,16 +147,21 @@ namespace AElf.CrossChain.Communication.Grpc
                     {
                         break;
                     }
-
-                    BlockCacheEntityProducer.Logger.LogTrace(
-                        $"Received response from chain {ChainHelpers.ConvertChainIdToBase58(response.ChainId)} at height {response.Height}");
                 }
             }
         }
-
-        protected CallOptions CreateOption()
+        
+        private Task HandshakeAsync()
         {
-            return new CallOptions().WithDeadline(TimestampHelper.GetUtcNow().ToDateTime().AddSeconds(DialTimeout));
+            var reply = _basicGrpcClient.CrossChainHandShakeAsync(new HandShake
+            {
+                FromChainId = _localChainId,
+                ListeningPort = _localListeningPort,
+                Host = _host
+            }, CreateOption());
+            var res = reply != null && reply.Result;
+            IsConnected = res;
+            return Task.FromResult(res);
         }
 
         public abstract Task<ChainInitializationData> RequestChainInitializationDataAsync(int chainId);
