@@ -91,10 +91,7 @@ namespace AElf.OS.Network.Application
         {
             try
             {
-                Logger.LogDebug($"Before broadcast {announce.BlockHash} to {peer}.");
                 await peer.AnnounceAsync(announce);
-                Logger.LogDebug($"After broadcast {announce.BlockHash} to {peer}.");
-
                 return true;
             }
             catch (NetworkException ex)
